@@ -8,3 +8,20 @@ https://github.com/bademiya21/Topic-Modeling-with-Automated-Determination-of-the
 # Database Postgresql
 https://medium.com/@viviennediegoencarnacion/getting-started-with-postgresql-on-mac-e6a5f48ee399
 https://pynative.com/python-postgresql-tutorial/
+
+## Reboot postgres
+https://bitadj.medium.com/completely-uninstall-and-reinstall-psql-on-osx-551390904b86
+
+## Postgres user, database etc
+https://medium.com/coding-blocks/creating-user-database-and-adding-access-on-postgresql-8bfcd2f4a91e
+1. Once you install postgres, you createdb wenjian to set wenjian as default psql 
+2. psql postgres will default to the postgres user created during installation
+3. Create new roles:
+    https://medium.com/@viviennediegoencarnacion/getting-started-with-postgresql-on-mac-e6a5f48ee399
+
+
+## Difference between psycopg2 and sqlalchemy
+https://stackoverflow.com/questions/8588126/sqlalchemy-or-psycopg2
+
+# Use None rather than np.nan for insertion to SQL database
+https://stackoverflow.com/questions/39279824/use-none-instead-of-np-nan-for-null-values-in-pandas-dataframe

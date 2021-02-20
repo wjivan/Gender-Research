@@ -3,11 +3,10 @@ import pandas as pd
 import numpy as np
 import requests
 import unicodedata
+import string
 import re
 from fuzzywuzzy import fuzz, process
 from bs4 import BeautifulSoup
-
-url = 'https://ideas.repec.org/e/pag127.html'
 
 # ----------- UTILITY ---------------
 def clean_string(string):
@@ -23,6 +22,38 @@ def clean_series(series):
     cleaned = series.map(clean_string)
     return cleaned
 
+def standardise_column_names(df, remove_punct=True):
+    """ Converts all DataFrame column names to lower case replacing
+    whitespace of any length with a single underscore. Can also strip
+    all punctuation from column names.
+    
+    Parameters
+    ----------
+    df: pandas.DataFrame
+        DataFrame with non-standardised column names.
+    remove_punct: bool (default True)
+        If True will remove all punctuation from column names.
+    
+    Returns
+    -------
+    df: pandas.DataFrame
+        DataFrame with standardised column names.
+
+    """
+    
+    translator = str.maketrans(string.punctuation, ' '*len(string.punctuation))
+
+    for c in df.columns:
+        c_mod = c.lower()
+        if remove_punct:            
+            c_mod = c_mod.translate(translator)
+        c_mod = '_'.join(c_mod.split(' '))
+        if c_mod[-1] == '_':
+            c_mod = c_mod[:-1]
+        c_mod = re.sub(r'\_+', '_', c_mod)
+        df.rename({c: c_mod}, inplace=True, axis=1)
+    return df
+
 # PIPELINE ----------------->
 # Set up soup
 def setup_soup(url):
@@ -37,15 +68,23 @@ def scrape_papers(soup):
     # There will be overlaps
     publications = soup.find_all('li', class_={'list-group-item downfree', \
         'list-group-item downgate', 'list-group-item downnone'})
-
     paper_details = {}
-    for pub in publications:
-        title = pub.find('a').text
-        name_year = pub.text.strip().split('\n')[0]
-        authors = re.sub(r', \d{4}\.', '',name_year).split(' & ')
-        year = int(re.findall(r', (\d{4})\.', name_year)[0])
-        paper_details[title] = {'url':url, 'author': authors, 'year': year}
 
+    i = 1
+    for pub in publications:
+        try:
+            title = pub.find('a').text
+            name_year = pub.text.strip().split('\n')[0]
+            if 'undated' in name_year:
+                year = None
+                authors = re.sub(r', \"undated\"', '',name_year).split(' & ')
+            else:
+                year = int(re.findall(r', (\d{4})\.', name_year)[0])
+                authors = re.sub(r', \d{4}\.', '',name_year).split(' & ')
+            paper_details[title] = {'author': authors, 'year': year}
+        except:
+            print('something went wrong at paper {}'.format(i))
+        i +=1
     return paper_details
 
 # Scraping personal information of the author
@@ -61,6 +100,7 @@ def scrape_personal(soup):
         per[k] = v
     
     per_clean = {k:v for (k,v) in per.items() if (v is not '') }
+    
 
     # Find homepage link
     try:    
@@ -71,6 +111,7 @@ def scrape_personal(soup):
 
     # Find affiliation - can have multiple
     affiliation_soup = soup.find('div', {'id':'affiliation'})
+
     i = 0
     try:
         for a in affiliation_soup.find_all('h3'):
@@ -100,6 +141,9 @@ def scrape_personal(soup):
     except:
         print('affiliation not found')
 
+    # Drop unnamed items
+    per_clean = {k:v for (k,v) in per_clean.items() if (k is not '') }
+
     return per_clean
 
 # Flatten the paper details into a dataframe to be inserted into database
@@ -108,7 +152,6 @@ def makedf_paper(paper_details):
     pd_paperdetails = pd.DataFrame(paper_details) \
         .transpose() \
         .explode('author') \
-        .explode('url') \
         .reset_index() \
         .rename(columns = {'index':'paper'})
     
@@ -127,5 +170,19 @@ def makedf_paper(paper_details):
    # Convert 
     return pd_paperdetails
 
+def makedf_personal(personal_details):
+    # Make DF
+    df_personal = pd.DataFrame.from_records([personal_details])
+    # Standardise column names
+    df_personal = standardise_column_names(df_personal)
+    return df_personal
 
+# url = 'https://ideas.repec.org/e/pag127.html'
+# soup = setup_soup(url)
+# paper_details = scrape_papers(soup)
+# print(paper_details)
+# personal_details = scrape_personal(soup)
+# df_paper = makedf_paper(paper_details)
+# df_personal = pd.DataFrame.from_records([personal_details])
+# print(df_personal)
 # %%
