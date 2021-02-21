@@ -25,3 +25,8 @@ https://stackoverflow.com/questions/8588126/sqlalchemy-or-psycopg2
 
 # Use None rather than np.nan for insertion to SQL database
 https://stackoverflow.com/questions/39279824/use-none-instead-of-np-nan-for-null-values-in-pandas-dataframe
+
+# Python to SQL example
+https://github.com/aspromatis/Stock-Database/blob/master/dataload.py
+
+# Psycopg2 insert sql queries into postgres

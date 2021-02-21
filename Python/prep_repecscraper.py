@@ -55,6 +55,12 @@ def standardise_column_names(df, remove_punct=True):
         df.rename({c: c_mod}, inplace=True, axis=1)
     return df
 
+# There are instances where author name appears as Lastname, Firstname
+def reverse_comma(x):
+    if ',' in x:
+        x = x.split(', ')[-1] +' '+ x.split(', ')[0]
+    return x
+
 # PIPELINE ----------------->
 # Set up soup
 def setup_soup(url):
@@ -62,6 +68,30 @@ def setup_soup(url):
     page = requests.get(url)
     soup = BeautifulSoup(page.content, 'html.parser')
     return soup
+
+# Obtain a list of urls to scrape
+def get_author_urls():
+    url = 'https://ideas.repec.org/i/eall.html'
+    soup = setup_soup(url)
+    links = soup.find_all('a', href=True)
+    url_collection = []
+    for i in tqdm(links,desc='Downloading links'):
+        author = i.text
+        author_url = i['href']
+        url_collection.append([author, author_url]) 
+    
+    # Get rid of unnecessary links by finding the position of the first and last author
+    pos = [idx for idx, results in enumerate(url_collection) if ('Aaberge, Rolf ' in results[0]) or ('Zhou, Li ' in results[0])]
+    url_collection = url_collection[min(pos):max(pos)+1]    
+
+    # Some cleaning and get it into a DF
+    clean_urls = [reverse_comma(clean_string(u[0])).split(None, 2) + [u[1]] for u in url_collection]
+    cleaned = pd.DataFrame(clean_urls, columns=['first_name','middle_name','last_name','partial'])
+    cleaned['author_url'] = np.where(cleaned['partial'].isnull(), cleaned['last_name'], cleaned['partial'])
+    cleaned['last_name'] = np.where(cleaned['partial'].isnull(), cleaned['middle_name'], cleaned['last_name'])
+    cleaned['middle_name'] = np.where(cleaned['partial'].isnull(), None, cleaned['middle_name'])
+    cleaned = cleaned.drop(columns=['partial'])
+    return cleaned
 
 # Scrape papers information from the author
 def scrape_papers(soup):
@@ -112,7 +142,7 @@ def scrape_personal(soup):
     # Find homepage link
     try:    
         homepage = soup.find('td', {'class':'homelabel'}).next_sibling.find('a', href=True)['href']
-        per_clean['Homepage'] = homepage
+        per_clean['Homepage'] = str(homepage)
     except:
         print('homepage not found')
 
@@ -129,8 +159,8 @@ def scrape_personal(soup):
                 print('no breaks in affiliation')
                 department = ''
                 organisation = a
-            per_clean['Aff_Department{}'.format(i)] = department
-            per_clean['Aff_Organisation{}'.format(i)] = organisation
+            per_clean['Aff_Department{}'.format(i)] = str(department)
+            per_clean['Aff_Organisation{}'.format(i)] = str(organisation)
             i += 1
     except:
         print('affiliation not found')
@@ -143,7 +173,7 @@ def scrape_personal(soup):
                 location = a.text
             else:
                 print('no location in affiliation')
-            per_clean['Aff_Location{}'.format(i)] = location
+            per_clean['Aff_Location{}'.format(i)] = str(location)
             i += 1
     except:
         print('affiliation not found')
@@ -178,14 +208,9 @@ def makedf_paper(paper_details):
     # Replace anything like (Ed.)
     pd_paperdetails['author'] = pd_paperdetails['author'].str.replace(r'\(.*\)', '')
     # Make year numeric
-    pd_paperdetails['year'] = pd.to_numeric(pd_paperdetails['year']) 
-
-    # There are instances where author name appears as Lastname, Firstname
-    def reverse_comma(x):
-        if ',' in x:
-            x = x.split(', ')[-1] +' '+ x.split(', ')[0]
-        return x
-
+    pd_paperdetails['year'] = pd_paperdetails['year'].astype(str)
+    
+    # Reverse Firstname last name
     pd_paperdetails['author'] = pd_paperdetails['author'].map(reverse_comma)
 
     # Create first & last name & limit to 2 splits - first name, middle name, last name
@@ -207,7 +232,22 @@ def reconcile_first_name(df_paper, df_personal):
     df_paper = df_paper.drop_duplicates(subset=['paper','first_name','last_name'])
     return df_paper
 
-def attach_abstract(df_paper):
+def pipeline_scrape_economists(url):
+    # Takes an url and output a personal detail and paper dataframes
+    soup = setup_soup(url)
+    paper_details = scrape_papers(soup)
+    personal_details = scrape_personal(soup)
+    df_paper = makedf_paper(paper_details)
+    df_personal = makedf_personal(personal_details)
+    df_paper = reconcile_first_name(df_paper, df_personal)
+
+    # Save the url into the author table
+    url = url.replace('https://ideas.repec.org', '')
+    df_personal['author_url'] = url
+
+    return df_personal, df_paper
+
+def scrape_abstract(df_paper):
     paper_urls = df_paper['paper_url'].drop_duplicates()
     abstract_dict = {}
     for a in tqdm(paper_urls):
@@ -219,12 +259,7 @@ def attach_abstract(df_paper):
             print('Paper {} cannot find abstract'.format(a))
             abstract_dict[a] = None
     abstract_table = pd.DataFrame([(x,y) for x,y in abstract_dict.items()], columns = ['paper_url','abstract'])
-    df_paper = df_paper.merge(abstract_table, on='paper_url', how='left')
-
-    # Remove potential duplicates
-    abstract_table = abstract_table.drop_duplicates(subset=['abstract'])
-    df_paper = df_paper[df_paper['paper_url'].isin(list(abstract_table['paper_url'].unique()))]
-    return df_paper
+    return abstract_table
 
 
 # url = 'https://ideas.repec.org/e/pag127.html'
@@ -234,4 +269,10 @@ def attach_abstract(df_paper):
 # df_paper = makedf_paper(paper_details)
 # df_personal = makedf_personal(personal_details)
 # df_paper = reconcile_first_name(df_paper, df_personal)
+
+# ISSUES
+   # Remove potential duplicates
+    # df_paper = df_paper.merge(abstract_table, on='paper_url', how='left')
+    # abstract_table = abstract_table.drop_duplicates(subset=['abstract'])
+    # df_paper = df_paper[df_paper['paper_url'].isin(list(abstract_table['paper_url'].unique()))]
 # %%
