@@ -6,5 +6,6 @@
 *.rds
 *.txt
 *.csv
+Python/config.yaml
 Input/
 Output/

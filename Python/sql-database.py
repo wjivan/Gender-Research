@@ -6,15 +6,17 @@ import os
 from sqlalchemy import create_engine
 from tqdm import tqdm_notebook
 import importlib
+import yaml
 
 import prep_repecscraper as scraper
 importlib.reload(scraper)
 
 # Utilities ------------->
-
+with open("config.yaml", 'r') as stream:
+    config = yaml.safe_load(stream)
 
 # # Create a database connection
-db_password = 'wenjianraph'
+db_password = config['dbpass']
 engine = create_engine('postgresql://wenjian:{}@localhost/gender'.format(db_password))
 
 # Pipeline ---------->
