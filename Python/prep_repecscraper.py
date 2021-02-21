@@ -7,6 +7,7 @@ import string
 import re
 from fuzzywuzzy import fuzz, process
 from bs4 import BeautifulSoup
+from tqdm import tqdm
 
 # ----------- UTILITY ---------------
 def clean_string(string):
@@ -74,6 +75,12 @@ def scrape_papers(soup):
     for pub in publications:
         try:
             title = pub.find('a').text
+            # Get paper url and do some cleaning
+            paper_url = pub.find('a')['href'].replace('https://ideas.repec.org/','')
+            if not paper_url[0] == '/':
+                paper_url = '/'+paper_url
+            
+            # Get the authors and year of paper
             name_year = pub.text.strip().split('\n')[0]
             if 'undated' in name_year:
                 year = None
@@ -81,7 +88,7 @@ def scrape_papers(soup):
             else:
                 year = int(re.findall(r', (\d{4})\.', name_year)[0])
                 authors = re.sub(r', \d{4}\.', '',name_year).split(' & ')
-            paper_details[title] = {'author': authors, 'year': year}
+            paper_details[title] = {'author': authors, 'year': year, 'paper_url': paper_url}
         except:
             print('something went wrong at paper {}'.format(i))
         i +=1
@@ -161,13 +168,29 @@ def makedf_paper(paper_details):
 
     # Drop duplicates
     pd_paperdetails = pd_paperdetails.drop_duplicates(
-        subset = ['paper', 'author'])
+        subset = ['paper_url', 'author'])
     
-    # Drop titles that are very similar
+    # Drop titles that are very similar 
     similar = process.dedupe(list(pd_paperdetails['paper'].unique()), threshold = 95)
     pd_paperdetails = pd_paperdetails[pd_paperdetails['paper'].isin(similar)]
    
-   # Convert 
+    # Cleaning
+    # Replace anything like (Ed.)
+    pd_paperdetails['author'] = pd_paperdetails['author'].str.replace(r'\(.*\)', '')
+    # Make year numeric
+    pd_paperdetails['year'] = pd.to_numeric(pd_paperdetails['year']) 
+
+    # There are instances where author name appears as Lastname, Firstname
+    def reverse_comma(x):
+        if ',' in x:
+            x = x.split(', ')[-1] +' '+ x.split(', ')[0]
+        return x
+
+    pd_paperdetails['author'] = pd_paperdetails['author'].map(reverse_comma)
+
+    # Create first & last name & limit to 2 splits - first name, middle name, last name
+    pd_paperdetails['first_name'] = pd_paperdetails['author'].str.split(None, 2).str[0]
+    pd_paperdetails['last_name'] = pd_paperdetails['author'].str.split(None, 2).str[-1]
     return pd_paperdetails
 
 def makedf_personal(personal_details):
@@ -177,12 +200,38 @@ def makedf_personal(personal_details):
     df_personal = standardise_column_names(df_personal)
     return df_personal
 
+def reconcile_first_name(df_paper, df_personal):
+    df_paper = df_paper.merge(df_personal[['first_name','last_name']], on=['last_name'], how='left')
+    df_paper['first_name'] = np.where(df_paper['first_name_y'].notnull(), df_paper['first_name_y'], df_paper['first_name_x'])
+    df_paper = df_paper.drop(['first_name_x', 'first_name_y'], axis=1)
+    df_paper = df_paper.drop_duplicates(subset=['paper','first_name','last_name'])
+    return df_paper
+
+def attach_abstract(df_paper):
+    paper_urls = df_paper['paper_url'].drop_duplicates()
+    abstract_dict = {}
+    for a in tqdm(paper_urls):
+        try:
+            soup =  setup_soup('https://ideas.repec.org' + a)
+            abstract_text = soup.find('div', {'id':'abstract-body'}).text
+            abstract_dict[a] = abstract_text
+        except:
+            print('Paper {} cannot find abstract'.format(a))
+            abstract_dict[a] = None
+    abstract_table = pd.DataFrame([(x,y) for x,y in abstract_dict.items()], columns = ['paper_url','abstract'])
+    df_paper = df_paper.merge(abstract_table, on='paper_url', how='left')
+
+    # Remove potential duplicates
+    abstract_table = abstract_table.drop_duplicates(subset=['abstract'])
+    df_paper = df_paper[df_paper['paper_url'].isin(list(abstract_table['paper_url'].unique()))]
+    return df_paper
+
+
 # url = 'https://ideas.repec.org/e/pag127.html'
 # soup = setup_soup(url)
 # paper_details = scrape_papers(soup)
-# print(paper_details)
 # personal_details = scrape_personal(soup)
 # df_paper = makedf_paper(paper_details)
-# df_personal = pd.DataFrame.from_records([personal_details])
-# print(df_personal)
+# df_personal = makedf_personal(personal_details)
+# df_paper = reconcile_first_name(df_paper, df_personal)
 # %%
