@@ -190,35 +190,39 @@ pkeys = {'author_details': ['first_name', 'last_name'], \
 db_to_update = ['author_details','paper_details','author_paper']
 
 examined = []
-with open('parrot.pkl', 'wb') as f:
-    for u in tqdm(unchecked_urls[:3]):
-        try:
-            # Get tables
-            url = 'https://ideas.repec.org' + u
-            print('Scraping {}'.format(url))
-            df_personal, df_paper = scraper.pipeline_scrape_economists(url)
-            # Make necessary tables
-            paper_table = make_paper_table(df_paper)
-            author_table = make_author_table(df_personal)
-            author_paper_table = make_author_paper_table(df_paper)
-            tables_to_update = [author_table, paper_table, author_paper_table]
-        except:
-            print('Failure in making tables and scraping for {}'.format(u))
-        # Update the tables
-        try:
-            for i in range(3):
-                update_tables(db_to_update[i], \
-                                pkeys[db_to_update[i]], \
-                                tables_to_update[i], \
-                                conn)
-            examined.append(u)
-            pickle.dump(examined, f)
-        except:
-            print('Failure in insertion into database {}'.format(u))
-        
+for u in tqdm(unchecked_urls):
+    success = ''
+    try:
+        # Get tables
+        url = 'https://ideas.repec.org' + u
+        print('Scraping {}'.format(url))
+        df_personal, df_paper = scraper.pipeline_scrape_economists(url)
+        # Make necessary tables
+        paper_table = make_paper_table(df_paper)
+        author_table = make_author_table(df_personal)
+        author_paper_table = make_author_paper_table(df_paper)
+        tables_to_update = [author_table, paper_table, author_paper_table]
+    except:
+        print('Failure in making tables and scraping for {}'.format(u))
+    # Update the tables
+    try:
+        for i in range(3):
+            update_tables(db_to_update[i], \
+                            pkeys[db_to_update[i]], \
+                            tables_to_update[i], \
+                            conn)
+        success = '-Success'
+    except:
+        print('Failure in insertion into database {}'.format(u))
+        success = '-Fail'
+
+    examined.append(u+success)
+    with open('parrot.pkl', 'wb') as f:
+        pickle.dump(examined, f)
 
 with open('parrot.pkl','rb') as f:
     seen = pickle.load(f)
 
-print('Saved {} out of {}'.format(len(unchecked_urls), len(seen)))
+print('Saved {} out of {}'.format(len(seen), len(unchecked_urls)))
+print(seen)
 #%%
