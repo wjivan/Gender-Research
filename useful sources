@@ -30,3 +30,6 @@ https://stackoverflow.com/questions/39279824/use-none-instead-of-np-nan-for-null
 https://github.com/aspromatis/Stock-Database/blob/master/dataload.py
 
 # Psycopg2 insert sql queries into postgres
+
+# RPostgres - Postgres in R
+https://www.datacareer.de/blog/connect-to-postgresql-with-r-a-step-by-step-example/

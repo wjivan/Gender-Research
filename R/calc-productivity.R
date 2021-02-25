@@ -2,6 +2,11 @@ library(tidyverse)
 library(here)
 library(DataExplorer)
 library(lubridate)
+library(DBI)
+library(RPostgreSQL)
+library(RPostgres)
+library(remotes)
+library(yaml)
 
 df <- read_rds(here('Output/df_combined_noissue_clean.rds'))
 plot_missing(df)
@@ -203,4 +208,56 @@ ggplot(df_segment, aes(x=year,
         axis.text.y=element_blank(),
         axis.ticks.y=element_blank())
 
+## Using data from database IDEAS
+config <- yaml::read_yaml(here('Python/config.yaml'))
+con<-dbConnect(Postgres())
+db <- 'gender'  #provide the name of your db
+host_db <- 'localhost' #i.e. # i.e. 'ec2-54-83-201-96.compute-1.amazonaws.com'  
+db_port <- '5432'  # or any other port specified by the DBA
+db_user <- 'wenjian'
+db_password <- config$dbpass
 
+con <- dbConnect(RPostgres::Postgres(), 
+                 dbname = db, 
+                 host=host_db, 
+                 port=db_port, 
+                 user=db_user, 
+                 password=db_password)  
+# Test connection
+dbListTables(con) 
+
+# Use query from DBeaver
+query <- "select author_url, paper_url, year, first_name, last_name from (
+	with author_paper_year as (
+		select *
+		from clean_author_paper cap 
+		left join clean_paper_details using (paper_url) )
+	select distinct paper_url, author_url , year, 
+					max(year) over (partition by author_url) max_year,
+					min(year) over (partition by author_url) min_year
+	from author_paper_year) t
+left join author_details using (author_url)
+where t.min_year = {min_year} and t.max_year > {max_year}
+order by t.author_url, t.year;"
+min_year = 2012
+max_year = min_year +5
+query <- gsub('\\{min_year\\}', min_year, query)
+query <- gsub('\\{max_year\\}', max_year, query)
+
+db_clean <- dbGetQuery(con, query)
+db_clean %>% 
+  left_join(df %>% distinct(first_name, last_name, sex)) %>% 
+  filter(!is.na(sex)) %>% 
+  filter(sex != '') %>% 
+  group_by(first_name, last_name, sex,year) %>% 
+  summarise(total_counts = n()) %>% 
+  ungroup() %>% 
+  group_by(sex, year) %>% 
+  summarise(counts = mean(total_counts)) %>% 
+
+ggplot() +
+  geom_line(aes(x=year, y = counts, colour = sex))+
+  ylab('Average publications per person')+
+  xlab('Year')+
+  labs(color='Gender')+
+  ggtitle('Gender productivity gap for\n one cohort of economist 2009-2020')

@@ -47,4 +47,12 @@ from paper_details;
 
 drop table if exists temp_author_paper;
 
+-- paper details change year to numeric
+create table clean_paper_details as(
+	select paper_url, paper, year::integer
+	from paper_details
+	where year != 'None'
+);
 
+select count(distinct(paper_url)) 
+from clean_paper_details; 
